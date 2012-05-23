@@ -1,0 +1,135 @@
+#
+# nagios plugin for l2p devices
+#
+# 
+# (c) 2012, Ondics GmbH | githubler@ondics.de | www.ondics.de
+#
+
+1. description
+2. installation
+3. device detection in the local network
+4. the plugin bash script
+5. the nagios configuration example
+6. licensing
+
+
+1. description
+==============
+
+This nagios plugin enables nagios to check
+l2p devices, e.g. opus20 devices. it's written
+in bash and uses the l2p script collection
+l2p is the "lufft logger protocol" developed by
+G. Lufft Mess- und Regeltechnik GmbH in Germany
+(www.lufft.com), a producer of climatological
+precision measuring equipment.
+
+
+2. installation
+===============
+prerequisites are:
+- l2p script collection installed
+- ngrep to detect l2p devices in the local network
+- bc for floating point calculations
+
+a) download, install and test the l2p script collection.
+   see script collection for installation. run test cases!
+   
+b) adjust ./local_env to your needs
+   test the nagios plugin:
+   > ./nagios-l2p-check --channel 160 --ipaddr 10.0.0.108
+   
+c) put the nagios l2p config file ./nagios-l2p.cfg in the
+   nagios config directory OR make a link:
+   > ln -s ~user/nagios-plugin/nagios-l2p.cfg  /etc/nagios3/conf.d/nagios-l2p.cfg
+   if you don't have sufficient rights, use sudo
+   
+d) customize the nagios l2p config-file to your needs
+
+it is recommended to use nagiosgraph for charting
+purposes.
+
+
+3. device detection in the local network
+========================================
+e.g. for opus 20 thip device:
+first initalize device with button on the backside (lan init).
+then detect udp broadcast with:
+> ngrep '' 'udp and port 52010'
+attention: ngrep requires root to run, so as user 
+> sudo ngrep '' 'udp and port 52010'
+will work better
+
+the result looks like:
+#...
+# U 192.168.1.154:52010 -> 255.255.255.255:52005
+#...
+
+the ip address of this device is 192.168.1.154
+
+alternatively the lufft smartgraph3 software can be used
+(for free download check www.lufft.com)
+
+
+4. the plugin bash script
+=========================
+> ./nagios-l2p-check -h
+gives:
+
+Nagios Plugin for L2P Devices
+
+Usage: nagios-l2p-check [-h] ...
+
+Plugin checks measured values on l2p devices.
+Options:
+    -d | --debug     talk about what's going on
+    -h | --help      this help
+    -l | --logging   log measured value to /tmp/nagios-l2p-check.log
+    -version         just print version
+    -v               nagios allows -v for verbosity
+    --minwarn <...>  lower limit of warning range (default: 15)
+    --maxwarn <...>  upper limit of warning range (default: 25)
+    --mincrit <...>  lower limit of critial range (default: 5)
+    --maxcrit <...>  upper limit of critial range (default: 30)
+    --channel <ch>   l2p-channel to use (as decimal number, default: 100)
+    --ipaddr <ip>    ip-address of l2p-device
+    --port <num>     port of l2p-device (default: 52015)
+
+(C) Ondics 2012, author: githubler@ondics.de, www.ondics.de
+
+
+
+5. the nagios configuration example
+===================================
+
+The basic configuration elements are:
+- the nagios command "check-l2p-value": modify path to your location.
+  you can switch on logging by adding a "-l"
+- an abstract service "generic-l2p-service"
+and for each l2p device:
+- host
+- service (graphed for nagiosgraph!)
+
+in the service, you should modify 
+- the min/max-ranges for warning and critical states
+- the l2p channel number
+- the interval to request data
+
+
+6. licensing
+============
+# The Script is dual licensed under commercial and GPL Version 3
+# licenses. For commercial license conditions please contact us.
+# As free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+
+
+have fun!
+guthubler@ondics.de

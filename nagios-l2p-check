@@ -1,0 +1,187 @@
+#!/bin/bash
+#
+# ./nagios-l2p-check
+#
+# nagios plugin to monitor l2p devices, e.g. Lufft OPUS20
+#
+# to get help, use ./nagios-l2p-check -h
+#
+# (c) 2012, Ondics GmbH | githubler@ondics.de | www.ondics.de
+#
+# This program is dual licensed under commercial and GPL Version 3
+# licenses. For commercial license conditions please contact us.
+# As free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+
+local_dir="/home/clauss/git-repos/ondics-lufft-l2p_nagios_plugin"
+
+# read local environment
+if [ -e "$local_dir/local_env" ];then
+    source "$local_dir/local_env"
+    PATH="$PATH:$dir_scripts"
+else
+    echo "error: local_dir not set correctly"
+    exit 1
+fi
+
+
+self="${0##*/}"
+
+
+# default values
+logfile="/tmp/$self.log"
+verbosity=0
+debug=0
+channel=100
+min_warn=15
+max_warn=25
+min_crit=5
+max_crit=30
+#ip_addr=""
+port=52015
+logging=0
+
+error() {
+    local msg="$1"
+    printf "SERVICE STATUS: Unknown [%s: %s]\n" "$self" "$msg" 
+    # print f "%s: %s\nT ry '%s --help' for more information\n" "$self" "$msg" "$self" >&2
+    if [ "$logging" -eq 1 ]; then
+        printf "%s (%s): error [%s]\n" "$(date '+%F %T')" "$self" "$msg" >> "$logfile"
+    fi
+    exit 3
+}
+usage() {
+	printf "Nagios Plugin for L2P Devices\n\n"
+	printf "Usage: %s [-h] ...  \n\n" "$self"
+	printf "Plugin checks measured values on l2p devices.\n"
+        printf "Options:\n"
+        printf "    -d | --debug     talk about what's going on\n"
+        printf "    -h | --help      this help\n"
+        printf "    -l | --logging   log measured value to $logfile\n"
+        printf "    -version         just print version\n"
+        printf "    -v               nagios allows -v for verbosity\n"
+        printf "    --minwarn <...>  lower limit of warning range (default: $min_warn)\n"
+        printf "    --maxwarn <...>  upper limit of warning range (default: $max_warn)\n"
+        printf "    --mincrit <...>  lower limit of critial range (default: $min_crit)\n"
+        printf "    --maxcrit <...>  upper limit of critial range (default: $max_crit)\n"
+        printf "    --channel <ch>   l2p-channel to use (as decimal number, default: $channel)\n"
+        printf "    --ipaddr <ip>    ip-address of l2p-device\n"
+        printf "    --port <num>     port of l2p-device (default: $port)\n"
+        printf "\n(C) Ondics 2012, author: githubler@ondics.de, www.ondics.de\n"
+	exit
+}
+
+while [[ $# -gt 0 ]]; do
+	arg="$1"; shift	
+	case "$arg" in
+        -h|--help  ) usage                  ;;
+        -d|--debug) debug=1                 ;;
+        --version  ) error "version: $version" ;;
+        -v) (( verbosity+=1 ))              ;;
+        -l|--logging) logging=1;            ;;
+        --channel  ) channel="$1";  shift;  ;;
+        --minwarn  ) min_warn="$1"; shift;  ;;
+        --maxwarn  ) max_warn="$1"; shift;  ;;
+        --mincrit  ) min_crit="$1"; shift;  ;;
+        --maxcrit  ) max_crit="$1"; shift;  ;;
+        --ipaddr   ) ip_addr="$1";  shift;  ;;
+        --port     ) port="$1";  shift;     ;;
+        -*         ) error "unrecognized option '$arg'" ;;
+        *         ) error "unrecognized argument '$arg'" ;;
+	esac
+done
+
+
+# do some parameter checking
+err=$(echo "$min_crit>$min_warn || $min_warn>$max_warn || $max_warn>$max_crit" | bc)
+if [ $err -eq 1 ];then error "incorrect: min_crit < min_warn < max_warn < max_crit"; fi
+if [ $channel -lt 100 -o $channel -gt 65535 ]; then error "channel [$channel] incorrect"; fi
+if [ $port -lt 100 ]; then error "port [$port] incorrect (default is 52015)"; fi
+if [ -z "$ip_addr" ]; then error "no ip_addr specified."; fi
+
+if [ $debug -eq 1 ]; then
+    printf "channel=%d\n" "$channel"
+    printf "minwarn=%f\n" "$min_warn"
+    printf "maxwarn=%f\n" "$max_warn"
+    printf "mincrit=%f\n" "$min_crit"
+    printf "maxcrit=%f\n" "$max_crit"
+    printf "ipaddr=$ip_addr\n"
+    printf "verbosity=$verbosity (same effect as one -v)\n"
+fi
+
+# get value from device using command "23 10"
+hi=$(echo "$channel" | gawk '{print rshift($0,8)}')
+lo=$(echo "$channel" | gawk '{print and($0,0xFF)}')
+cmd="$(printf "23 10 %02x %02x" "$lo" "$hi" )" 
+#cmd="23 10 2c 01"
+
+
+# before connecting to device, set semaphore to serialize
+# concurrent device access
+semafile="/tmp/$self.$BASHPID.sema"
+touch "$semafile"
+chmod a+w "$semafile"
+while [ 1 ]; do
+    sleep 2
+    if [ "$semafile" = "$(ls -1t /tmp/$self.*.sema |tail -1)" ]; then
+        break;
+    fi
+    if [ $logging -eq 1 ]; then
+        printf "%s ($self pid=$BASHPID): waiting\n" "$(date '+%F %T')" >> "$logfile"
+    fi
+    sleep 5
+done
+
+# performing device access
+#value="$(cd $l2p_scripts_dir; echo "$cmd" | l2p-frame -x | nc -i 2 -q 1 $ip_addr $port | l2p-result )"
+value="$(echo "$cmd" | l2p-frame -x | nc -i 2 -q 1 $ip_addr $port | l2p-result )"
+
+# remove semaphore
+rm "$semafile"
+
+
+# did we get a float value (and no error)?
+err=$(echo "$value" | gawk '{ print ($0*1.0!=$0)?1:0 }')
+if [ $err -eq 1 ];then
+    if [ $verbosity -eq 0 ]; then
+        error "device access failed (device off?)"
+    else
+        error "device access failed (device off?) / could not connect to device $ip_addr on port $port / value= [$value]"
+    fi
+fi
+        
+
+crit=$(echo "$value < $min_crit || $value > $max_crit " | bc)
+warn=$(echo "$value < $min_warn || $value > $max_warn " | bc)
+if [ "$debug" -eq 1 ]; then
+    printf "crit=%d, warn=%d\n" "$crit" "$warn"
+fi
+
+if [ "$crit" -eq 1 ]; then
+    printf "SERVICE STATUS: CRIT - exceeding range: %.3f not in [$min_crit,$max_crit] | value=%f\n" "$value" "$value"
+    nagiosstate="CRIT"
+    nagiosexit=2
+elif [ "$warn" -eq 1 ]; then
+    printf "SERVICE STATUS: WARN - exceeding range: %.3f not in [$min_warn,$max_warn] | value=%f\n" "$value" "$value"
+    nagiosstate="WARN"
+    nagiosexit=1
+else
+    printf "SERVICE STATUS: OK - in range: %.3f in [$min_warn,$max_warn] | value=%f\n" "$value" "$value"
+    nagiosstate="OK"    
+    nagiosexit=0
+fi
+
+# logging required?
+if [ $logging -eq 1 ]; then
+    printf "%s (%s): value=%f state=%s\n" "$(date '+%F %T')" "$self" "$value" "$nagiosstate" \
+            >> "$logfile"
+fi
+
+exit $nagiosexit
