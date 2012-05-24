@@ -20,7 +20,7 @@
 # GNU General Public License for more details.
 #
 
-local_dir="/var/lib/lufft-l2p-nagios-plugin"
+local_dir="/usr/share/lufft-l2p-nagios-plugin"
 
 # read local environment
 if [ -e "$local_dir/local_env" ];then
