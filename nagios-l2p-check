@@ -20,7 +20,7 @@
 # GNU General Public License for more details.
 #
 
-local_dir="/home/clauss/git-repos/ondics-lufft-l2p_nagios_plugin"
+local_dir="/var/lib/lufft-l2p-nagios-plugin"
 
 # read local environment
 if [ -e "$local_dir/local_env" ];then
