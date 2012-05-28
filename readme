@@ -33,6 +33,12 @@ prerequisites are:
 - bc for floating point calculations
 
 a) download, install and test the l2p script collection.
+   it is hosted on github. you can access it
+   e.g by downloading zip file:
+   https://github.com/ondics/lufft-l2p-script-collection/zipball/master
+   or get it with git:
+   git clone git@github.com:ondics/lufft-l2p-script-collection.git
+
    see script collection for installation. run test cases!
    
 b) adjust ./local_env to your needs
